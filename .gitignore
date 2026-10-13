@@ -1,0 +1,6 @@
+# Compiled binaries and build artifacts
+*.elf
+*.vmem
+*.bin
+*.o
+*.d
