@@ -1,0 +1,86 @@
+name: ibex RISC-V Validation
+
+on: [push, pull_request]
+
+env:
+  # ibex commit to test against. only bump this on purpose
+  IBEX_COMMIT: af456e25575013668ab56725268126f6b0feca35
+  # same verilator and toolchain versions ibex uses in its own CI (ci/vars.env)
+  VERILATOR_VERSION: v4.210
+  TOOLCHAIN_VERSION: 20220210-1
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-22.04
+    # kill it if something hangs so it doesnt eat all my minutes
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Clone ibex
+        run: |
+          git init -q ibex
+          cd ibex
+          git remote add origin https://github.com/lowRISC/ibex.git
+          git fetch -q --depth=1 origin $IBEX_COMMIT
+          git checkout -q FETCH_HEAD
+
+      # use a clean python instead of ubuntu's. the system one has an old babel
+      # that breaks the fusesoc install
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            device-tree-compiler srecord zlib1g-dev \
+            git make g++ libelf-dev wget xz-utils
+          # packaging is needed by ibex check_tool_requirements script
+          python -m pip install fusesoc==2.4.3 packaging
+
+      # prebuilt verilator from lowrisc, way faster than building it every run
+      - name: Install Verilator
+        run: |
+          wget -q https://storage.googleapis.com/verilator-builds/verilator-$VERILATOR_VERSION.tar.gz
+          sudo mkdir -p /tools/verilator
+          sudo tar -C /tools/verilator -xzf verilator-$VERILATOR_VERSION.tar.gz
+          echo "/tools/verilator/$VERILATOR_VERSION/bin" >> $GITHUB_PATH
+
+      # lowrisc's rv32 toolchain so we dont need the riscv64 symlink hack
+      - name: Install RISC-V toolchain
+        run: |
+          NAME=lowrisc-toolchain-gcc-rv32imcb-$TOOLCHAIN_VERSION
+          wget -q https://github.com/lowRISC/lowrisc-toolchains/releases/download/$TOOLCHAIN_VERSION/$NAME.tar.xz
+          sudo mkdir -p /tools/riscv
+          sudo tar -C /tools/riscv -xf $NAME.tar.xz --strip-components=1
+          echo "/tools/riscv/bin" >> $GITHUB_PATH
+
+      # the simulator only changes when ibex or verilator change, so cache it
+      - name: Cache ibex simulator
+        id: cache-sim
+        uses: actions/cache@v4
+        with:
+          path: ibex/build/lowrisc_ibex_ibex_simple_system_0/sim-verilator/Vibex_simple_system
+          key: ibex-sim-${{ env.IBEX_COMMIT }}-verilator-${{ env.VERILATOR_VERSION }}
+
+      - name: Build ibex simulator
+        if: steps.cache-sim.outputs.cache-hit != 'true'
+        run: |
+          cd ibex
+          export MAKEFLAGS=-j$(nproc)
+          fusesoc --cores-root=. run --target=sim --setup --build \
+            lowrisc:ibex:ibex_simple_system
+
+      # tests go next to hello_test so the Makefiles find ../common/common.mk
+      - name: Copy tests into ibex
+        run: |
+          cp -r mem_test fib_test overflow_test ibex/examples/sw/simple_system/
+          cp run_tests.py ibex/
+
+      - name: Run tests
+        run: python ibex/run_tests.py

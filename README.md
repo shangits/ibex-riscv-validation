@@ -1,5 +1,7 @@
 # ibex-riscv-validation
 
+![CI](https://github.com/shangits/ibex-riscv-validation/actions/workflows/ci.yml/badge.svg)
+
 Bare-metal test suite for the [ibex](https://github.com/lowRISC/ibex) RISC-V CPU core running on a Verilator simulation. Tests are written in C, compiled with a RISC-V cross compiler, and run on the simulated CPU. The Python harness reads the virtual UART output and reports PASS or FAIL with cycle and instruction counts for each test.
 
 ## Tests
@@ -9,6 +11,12 @@ Bare-metal test suite for the [ibex](https://github.com/lowRISC/ibex) RISC-V CPU
 | `mem_test` | Writes 5 bit patterns to RAM and reads them back |
 | `fib_test` | Computes 10 Fibonacci numbers and compares against known values |
 | `overflow_test` | Verifies unsigned wrap, signed overflow, bit shift, and underflow |
+
+## CI
+
+Every push runs the full thing on GitHub Actions (see `.github/workflows/ci.yml`). It grabs a pinned ibex commit, installs lowRISC's prebuilt Verilator 4.210 and rv32 toolchain, builds the simulator, drops the tests into ibex and runs `run_tests.py`. The built simulator is cached so later runs skip that step.
+
+Versions are pinned on purpose so a red run means my change broke something, not an ibex or tool update.
 
 ## Setup
 
@@ -33,8 +41,14 @@ fusesoc --cores-root=. run --target=sim --tool=verilator \
 ```
 
 **4. Copy test files into place and run**
+
+The tests go next to ibex's own hello_test so the Makefiles can find `../common/common.mk`. Run this on your machine (not in the container):
 ```bash
-cp -r ibex-riscv-validation/* /ibex/
+cp -r ibex-riscv-validation/mem_test ibex-riscv-validation/fib_test ibex-riscv-validation/overflow_test ~/ibex/examples/sw/simple_system/
+cp ibex-riscv-validation/run_tests.py ~/ibex/
+```
+Then inside the container:
+```bash
 python3 /ibex/run_tests.py
 ```
 
@@ -46,8 +60,8 @@ python3 /ibex/run_tests.py
 ==================================================
   mem_test             ... PASS  (0.05s)
     UART        : mem_test: PASS
-    Cycles      : 520
-    Instructions: 34
+    Cycles      : 521
+    Instructions: 35
   fib_test             ... PASS  (0.04s)
     UART        : fib_test: PASS
     Cycles      : 688

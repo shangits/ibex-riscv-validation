@@ -28,6 +28,11 @@ def build_test(test_name):
 def run_test(test_name):
     # load the ELF into the simulator and collect output
     elf = os.path.join(TESTS_DIR, test_name, f"{test_name}.elf")
+
+    # delete old log first so we dont read the last test's output
+    if os.path.exists(UART_LOG):
+        os.remove(UART_LOG)
+
     result = subprocess.run(
         [SIMULATOR, f"--meminit=ram,{elf}"],
         capture_output=True, text=True,
